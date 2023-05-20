@@ -1,4 +1,3 @@
-# coding: utf-8
 from json import loads
 from time import sleep, time
 from pickle import dump, load
@@ -10,7 +9,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 
 class Concert(object):
-    def __init__(self, date, session, price, real_name, nick_name, ticket_num, damai_url, target_url,driver_path):
+    def __init__(self, date, session, price, real_name, nick_name, ticket_num, damai_url, target_url,driver_path,city):
         self.date = date  # 日期序号
         self.session = session  # 场次序号优先级
         self.price = price  # 票价序号优先级
@@ -24,6 +23,7 @@ class Concert(object):
         self.damai_url = damai_url  # 大麦网官网网址
         self.target_url = target_url  # 目标购票网址
         self.driver_path = driver_path  # 浏览器驱动地址
+        self.city = city  # 城市
         self.driver = None
 
     def isClassPresent(self, item, name, ret=False):
@@ -119,6 +119,7 @@ class Concert(object):
             # 确认页面刷新成功
             try:
                 box = WebDriverWait(self.driver, 1, 0.1).until(EC.presence_of_element_located((By.CLASS_NAME, 'perform__order__box')))
+                citys = WebDriverWait(self.driver, 1, 0.1).until(EC.presence_of_element_located((By.CLASS_NAME, 'citys')))
             except:
                 raise Exception(u"***Error: 页面刷新出错***")
 
@@ -131,15 +132,36 @@ class Concert(object):
                 raise Exception(u"***Error: 实名制遮罩关闭失败***")
 
             try:
-                buybutton = box.find_element_by_class_name('buybtn') # 寻找立即购买标签
+                buybutton = box.find_element_by_css_selector ('body > div.perform > div > div.flex1 > div.hd > div > div.order > div.perform__order__box > div:nth-child(7) > div > div.title') # 寻找立即购买标签
+                # buybutton = box.find_element_by_class_name('buybtn') # 寻找立即购买标签
+                #buybutton = box.find_element_by_class_name('buy-link') # 寻找立即购买标签
                 buybutton_text = buybutton.text
+                # buybutton.click()
             except:
                 raise Exception(u"***Error: buybutton 位置找不到***")
+                buybutton_text = "即将开售"
 
+            # if buybutton_text == "即将开抢" or buybutton_text == "即将开售":
+            #     self.status = 2
+            #     raise Exception(u"---尚未开售，刷新等待---")
             if buybutton_text == "即将开抢" or buybutton_text == "即将开售":
                 self.status = 2
-                raise Exception(u"---尚未开售，刷新等待---")
+                raise Exception(u"---尚未开售，刷新等待---")   
+            else :
+                print("已经放票")         
 
+            try:
+                selects = citys.find_elements_by_class_name('cityitem') # 日期、场次和票档进行定位
+                for item in selects:
+                    print(item.text)
+                    if item.text == self.city:
+                        item.click()
+                        print('\t城市定位成功')
+                        break
+            except:
+                raise Exception(u"***Error: 选择城市不成功***")
+            
+            box = WebDriverWait(self.driver, 1, 0.1).until(EC.presence_of_element_located((By.CLASS_NAME, 'perform__order__box')))
             try:
                 selects = box.find_elements_by_class_name('perform__order__select') # 日期、场次和票档进行定位
                 date = None  # 有的演出没有日期的选项
@@ -183,7 +205,7 @@ class Concert(object):
                 price_list = price.find_elements_by_class_name('select_right_list_item')#选定票档
                 # print('可选票档数量为：{}'.format(len(price_list)))
                 for i in self.price:
-                    j = price_list[i-1]
+                    j = price_list[-1]
                     k = self.isClassPresent(j, 'notticket')
                     if k:  # 存在notticket代表存在缺货登记，跳过
                         continue
@@ -192,6 +214,26 @@ class Concert(object):
                         break
             except:
                 raise Exception(u"***Error: 选择日期or场次or票档不成功***")
+            buybutton = box.find_element_by_class_name('buy-link')
+            buybutton.click()#点击立即购买
+            price_list = WebDriverWait(self.driver, 1, 0.1).until(EC.presence_of_element_located((By.CLASS_NAME, 'price-list')))
+            plist = price_list.find_elements_by_class_name('price')
+            finish = False
+            for price in plist:
+                if "disable" in price.get_attribute("class"):
+                    continue
+                elif "price--selected" in price.get_attribute("class"):
+                    price_text = price.find_element_by_class_name('price__package').text
+                else:
+                    price_text = price.find_element_by_class_name('price__text').text
+                
+                for j in self.price:
+                    if j in price_text :
+                        price.click()
+                        finish = True
+                        break
+                if finish:
+                    break
 
             try:
                 ticket_num_up = box.find_element_by_class_name('cafe-c-input-number-handler-up')
@@ -265,10 +307,10 @@ class Concert(object):
 
 if __name__ == '__main__':
     try:
-        with open('./config.json', 'r', encoding='utf-8') as f:
+        with open('config.json', 'r', encoding='utf-8-sig') as f:
             config = loads(f.read())
             # params: 场次优先级，票价优先级，实名者序号, 用户昵称， 购买票数， 官网网址， 目标网址, 浏览器驱动地址
-        con = Concert(config['date'], config['sess'], config['price'], config['real_name'], config['nick_name'], config['ticket_num'], config['damai_url'], config['target_url'], config['driver_path'])
+        con = Concert(config['date'], config['sess'], config['price'], config['real_name'], config['nick_name'], config['ticket_num'], config['damai_url'], config['target_url'], config['driver_path'],config['city'])
         con.enter_concert() #进入到具体抢购页面
     except Exception as e:
         print(e)
